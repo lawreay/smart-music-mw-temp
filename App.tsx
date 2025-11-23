@@ -11,6 +11,7 @@ import PlaylistModal from './components/PlaylistModal';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import AdminDashboard from './components/AdminDashboard';
 import UserProfile from './components/UserProfile';
+import SocialLikesModal from './components/SocialLikesModal';
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -46,6 +47,7 @@ const App: React.FC = () => {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [showAddToPlaylist, setShowAddToPlaylist] = useState<{ isOpen: boolean, songId: number | null }>({ isOpen: false, songId: null });
+  const [showSocialLikes, setShowSocialLikes] = useState<Song | null>(null);
 
   // Player State
   const [playerState, setPlayerState] = useState<PlayerState>({
@@ -103,7 +105,7 @@ const App: React.FC = () => {
         return;
     }
     if (viewState.type === 'profile') {
-        setHeaderInfo({ title: "Profile", desc: "Account Settings" });
+        setHeaderInfo({ title: "Profile", desc: "Account & Messages" });
         return;
     }
 
@@ -265,6 +267,11 @@ const App: React.FC = () => {
     setShowAddToPlaylist({ isOpen: false, songId: null });
   };
 
+  const handleUpdateUser = (updatedUser: User) => {
+    setUser(updatedUser);
+    refreshSongs(); // In case they uploaded something
+  };
+
   return (
     <div className="flex h-screen w-full bg-[#0a0e17] text-white font-sans">
       {/* Sidebar */}
@@ -320,7 +327,7 @@ const App: React.FC = () => {
                     onSongUpdate={refreshSongs} 
                 />
             ) : viewState.type === 'profile' && user ? (
-                <UserProfile user={user} onUpdateUser={setUser} />
+                <UserProfile user={user} onUpdateUser={handleUpdateUser} />
             ) : (
                 <>
                 {/* Hero Banner */}
@@ -387,6 +394,9 @@ const App: React.FC = () => {
                                     </div>
                                     <h3 className="text-sm font-bold text-white truncate mb-1">{song.title}</h3>
                                     <p className="text-xs text-gray-400 truncate">{song.artist}</p>
+                                    {song.uploadedBy && (
+                                        <p className="text-[10px] text-blue-400/70 truncate mt-1">Community Upload</p>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -426,6 +436,7 @@ const App: React.FC = () => {
         isLiked={currentSong ? likedSongIds.includes(currentSong.id) : false}
         onToggleLike={() => handleToggleLike(currentSong?.id)}
         user={user}
+        onShowLikes={() => currentSong && setShowSocialLikes(currentSong)}
       />
 
       {/* Modals */}
@@ -450,6 +461,23 @@ const App: React.FC = () => {
             onSelect={handleAddToPlaylist}
             onCreateNew={() => {
                 setShowCreatePlaylist(true);
+            }}
+        />
+      )}
+
+      {showSocialLikes && (
+        <SocialLikesModal 
+            song={showSocialLikes}
+            currentUser={user}
+            onClose={() => setShowSocialLikes(null)}
+            onMessageUser={(target) => {
+                // Navigate to profile/messages and select this user
+                // Simple trick: update view state to profile and set user?
+                // For now, simpler to just alert or open profile. 
+                // A full navigation system would require a Context or Redux.
+                // We'll auto-switch view to Profile to handle this in future, 
+                // for now just alert to go to messages.
+                alert(`Go to Profile > Messages to chat with ${target.username}`);
             }}
         />
       )}

@@ -1,6 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { Song, PlayMode, PlayerState, User } from '../types';
 import { getMusicInsight } from '../services/geminiService';
+import { backend } from '../services/backend';
 
 interface PlayerBarProps {
   currentSong: Song | null;
@@ -15,6 +17,7 @@ interface PlayerBarProps {
   isLiked: boolean;
   onToggleLike: () => void;
   user: User | null;
+  onShowLikes: () => void;
 }
 
 const formatTime = (time: number) => {
@@ -36,11 +39,13 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
   onVolumeChange,
   isLiked,
   onToggleLike,
-  user
+  user,
+  onShowLikes
 }) => {
   const [aiInsight, setAiInsight] = useState<string>("");
   const [showInsight, setShowInsight] = useState(false);
   const [loadingInsight, setLoadingInsight] = useState(false);
+  const [likeCount, setLikeCount] = useState(0);
 
   const fetchInsight = async () => {
     if (!currentSong) return;
@@ -54,7 +59,11 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
   useEffect(() => {
     setShowInsight(false);
     setAiInsight("");
-  }, [currentSong?.id]);
+    if(currentSong) {
+        // Simple mock count update or real fetch
+        setLikeCount(backend.getSongLikers(currentSong.id).length);
+    }
+  }, [currentSong?.id, isLiked]); // Update when like status changes
 
   if (!currentSong) return null;
 
@@ -87,14 +96,19 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
           </p>
         </div>
 
-        {/* Like Button */}
-        <button 
-            onClick={onToggleLike}
-            className={`text-lg transition-transform active:scale-90 ${isLiked ? 'text-pink-500' : 'text-gray-500 hover:text-white'}`}
-            title={user ? (isLiked ? "Remove from Liked" : "Add to Liked") : "Login to Like"}
-        >
-            <i className={`${isLiked ? 'fas' : 'far'} fa-heart`}></i>
-        </button>
+        {/* Like Button & Counter */}
+        <div className="flex flex-col items-center">
+            <button 
+                onClick={onToggleLike}
+                className={`text-lg transition-transform active:scale-90 ${isLiked ? 'text-pink-500' : 'text-gray-500 hover:text-white'}`}
+                title={user ? (isLiked ? "Remove from Liked" : "Add to Liked") : "Login to Like"}
+            >
+                <i className={`${isLiked ? 'fas' : 'far'} fa-heart`}></i>
+            </button>
+            <button onClick={onShowLikes} className="text-[10px] text-gray-500 hover:text-blue-400 mt-[-2px]">
+                {likeCount} likes
+            </button>
+        </div>
 
         {/* AI Popover */}
         {showInsight && (

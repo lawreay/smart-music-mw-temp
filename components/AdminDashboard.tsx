@@ -16,7 +16,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
   // Edit States
   const [editingSong, setEditingSong] = useState<Partial<Song> | null>(null);
   const [msgInput, setMsgInput] = useState<{ userId: string, text: string } | null>(null);
-  const [passReset, setPassReset] = useState<{ userId: string, pass: string } | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -29,6 +28,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
   const handleBlockUser = async (uid: string) => {
     if (uid === currentUser.id) return alert("You cannot block yourself.");
     await backend.toggleUserBlock(uid);
+    loadUsers();
+  };
+
+  const handleRoleChange = async (uid: string, newRole: string) => {
+    if (uid === currentUser.id) return alert("You cannot demote yourself here.");
+    await backend.updateUserRole(uid, newRole as any);
     loadUsers();
   };
 
@@ -59,7 +64,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
             file: editingSong.file || '',
             art: editingSong.art || 'https://picsum.photos/400/400'
         };
-        await backend.saveSong(songToSave);
+        await backend.saveSong(songToSave, currentUser.id);
         setEditingSong(null);
         onSongUpdate();
     }
@@ -99,7 +104,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
             <thead className="bg-[#0f1522] text-gray-400 uppercase font-bold">
               <tr>
                 <th className="p-4">User</th>
-                <th className="p-4">Email</th>
+                <th className="p-4">Role</th>
                 <th className="p-4">Status</th>
                 <th className="p-4">Actions</th>
               </tr>
@@ -111,21 +116,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
                     <img src={u.avatar} className="w-8 h-8 rounded-full" alt="av" />
                     <div>
                         <div className="font-bold">{u.username}</div>
-                        <div className="text-xs text-gray-500">{u.id}</div>
+                        <div className="text-xs text-gray-500">{u.email}</div>
                     </div>
                   </td>
-                  <td className="p-4 text-gray-300">{u.email}</td>
                   <td className="p-4">
-                    {u.role === 'admin' ? (
-                        <span className="bg-red-900 text-red-200 text-xs px-2 py-1 rounded">Admin</span>
-                    ) : u.isBlocked ? (
+                    {u.id === currentUser.id ? (
+                        <span className="text-red-400 font-bold uppercase text-xs">Admin (You)</span>
+                    ) : (
+                        <select 
+                            value={u.role}
+                            onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                            className="bg-[#0f1522] border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                        >
+                            <option value="user">User</option>
+                            <option value="premium">Premium</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    {u.isBlocked ? (
                         <span className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">Blocked</span>
                     ) : (
                         <span className="bg-green-900 text-green-200 text-xs px-2 py-1 rounded">Active</span>
                     )}
                   </td>
                   <td className="p-4 flex gap-2">
-                    {u.role !== 'admin' && (
+                    {u.id !== currentUser.id && (
                         <>
                             <button 
                                 onClick={() => handleBlockUser(u.id)}
@@ -178,6 +195,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
                             <div>
                                 <div className="font-bold">{song.title}</div>
                                 <div className="text-xs text-gray-400">{song.artist}</div>
+                                {song.uploadedBy && song.uploadedBy !== currentUser.id && (
+                                    <div className="text-[10px] text-blue-400">Uploaded by user</div>
+                                )}
                             </div>
                         </div>
                         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -194,7 +214,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, songs, onS
       {msgInput && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
             <div className="bg-[#1e293b] p-6 rounded-xl w-full max-w-md border border-gray-600">
-                <h3 className="text-lg font-bold mb-4">Send Message to User</h3>
+                <h3 className="text-lg font-bold mb-4">Send Message</h3>
                 <textarea 
                     className="w-full bg-[#0f1522] border border-gray-700 rounded p-3 text-white mb-4 h-32"
                     value={msgInput.text}

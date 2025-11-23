@@ -6,6 +6,7 @@ export interface Song {
   artist: string;
   art: string;
   album?: string;
+  uploadedBy?: string; // ID of the user who uploaded it
 }
 
 export enum PlayMode {
@@ -27,7 +28,7 @@ export interface User {
   id: string;
   username: string;
   email: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'premium';
   isBlocked?: boolean;
   avatar?: string;
   bio?: string;
@@ -43,7 +44,7 @@ export interface Playlist {
 
 export interface Message {
   id: string;
-  fromId: string; // 'admin' or user ID
+  fromId: string;
   toId: string;
   content: string;
   read: boolean;
