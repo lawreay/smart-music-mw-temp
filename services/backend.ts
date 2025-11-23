@@ -1,17 +1,40 @@
-import { User, Playlist } from '../types';
 
-const STORAGE_KEY = 'smart_music_db_v1';
+import { User, Playlist, Song, Message } from '../types';
+import { processInitialSongs } from './musicData';
+
+const STORAGE_KEY = 'smart_music_db_v2'; // Bumped version
 
 interface DBSchema {
   users: (User & { password: string })[];
   playlists: Playlist[];
   likes: { userId: string; songId: number }[];
+  songs: Song[];
+  messages: Message[];
 }
 
+// Seed the DB if empty
 const getDB = (): DBSchema => {
   const stored = localStorage.getItem(STORAGE_KEY);
   if (!stored) {
-    const initial: DBSchema = { users: [], playlists: [], likes: [] };
+    const initialSongs = processInitialSongs();
+    
+    const adminUser = {
+      id: 'admin_001',
+      username: 'Lawrence (Admin)',
+      email: 'lawreay1@gmail.com',
+      password: 'lastBorn33.',
+      role: 'admin' as const,
+      avatar: 'https://github.com/lawreay.png', // Assuming github avatar
+      bio: 'Lead Developer & Admin of Smart Music'
+    };
+
+    const initial: DBSchema = { 
+      users: [adminUser], 
+      playlists: [], 
+      likes: [],
+      songs: initialSongs,
+      messages: []
+    };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
     return initial;
   }
@@ -25,13 +48,20 @@ const saveDB = (db: DBSchema) => {
 export const backend = {
   // --- AUTH ---
   signup: async (username: string, email: string, password: string): Promise<User> => {
-    // Simulate delay
     await new Promise(r => setTimeout(r, 500));
     const db = getDB();
     if (db.users.find(u => u.email === email)) {
       throw new Error("User already exists");
     }
-    const newUser = { id: Date.now().toString(), username, email, password };
+    const newUser = { 
+      id: Date.now().toString(), 
+      username, 
+      email, 
+      password, 
+      role: 'user' as const,
+      avatar: `https://ui-avatars.com/api/?name=${username}&background=random`,
+      bio: 'Music lover'
+    };
     db.users.push(newUser);
     saveDB(db);
     const { password: _, ...safeUser } = newUser;
@@ -42,9 +72,57 @@ export const backend = {
     await new Promise(r => setTimeout(r, 500));
     const db = getDB();
     const user = db.users.find(u => u.email === email && u.password === password);
+    
     if (!user) throw new Error("Invalid credentials");
+    if (user.isBlocked) throw new Error("This account has been blocked by the administrator.");
+
     const { password: _, ...safeUser } = user;
     return safeUser;
+  },
+
+  updateProfile: async (userId: string, updates: Partial<User>) => {
+    const db = getDB();
+    const userIndex = db.users.findIndex(u => u.id === userId);
+    if (userIndex > -1) {
+      db.users[userIndex] = { ...db.users[userIndex], ...updates };
+      saveDB(db);
+      const { password: _, ...safeUser } = db.users[userIndex];
+      return safeUser;
+    }
+    throw new Error("User not found");
+  },
+
+  // --- SONGS (Dynamic Library) ---
+  getAllSongs: (): Song[] => {
+    const db = getDB();
+    return db.songs;
+  },
+
+  // Admin: Add/Edit/Remove Songs
+  saveSong: async (song: Song) => {
+    const db = getDB();
+    const idx = db.songs.findIndex(s => s.id === song.id);
+    if (idx > -1) {
+      db.songs[idx] = song;
+    } else {
+      // New Song (assign a new ID if needed, simplistic approach here)
+      const newId = Math.max(...db.songs.map(s => s.id), 0) + 1;
+      db.songs.push({ ...song, id: newId });
+    }
+    saveDB(db);
+    return db.songs;
+  },
+
+  deleteSong: async (songId: number) => {
+    const db = getDB();
+    db.songs = db.songs.filter(s => s.id !== songId);
+    // Cleanup likes and playlists for this song
+    db.likes = db.likes.filter(l => l.songId !== songId);
+    db.playlists.forEach(p => {
+      p.songs = p.songs.filter(id => id !== songId);
+    });
+    saveDB(db);
+    return db.songs;
   },
 
   // --- PLAYLISTS ---
@@ -110,5 +188,50 @@ export const backend = {
   getLikedSongIds: (userId: string): number[] => {
     const db = getDB();
     return db.likes.filter(l => l.userId === userId).map(l => l.songId);
+  },
+
+  // --- ADMIN FUNCTIONS ---
+  getAllUsers: () => {
+    const db = getDB();
+    return db.users.map(({ password, ...u }) => u);
+  },
+
+  toggleUserBlock: async (targetUserId: string) => {
+    const db = getDB();
+    const user = db.users.find(u => u.id === targetUserId);
+    if (user && user.role !== 'admin') {
+      user.isBlocked = !user.isBlocked;
+      saveDB(db);
+    }
+    return backend.getAllUsers();
+  },
+
+  adminResetPassword: async (targetUserId: string, newPass: string) => {
+    const db = getDB();
+    const user = db.users.find(u => u.id === targetUserId);
+    if (user) {
+      user.password = newPass;
+      saveDB(db);
+    }
+  },
+
+  sendMessage: async (fromId: string, toId: string, content: string) => {
+    const db = getDB();
+    const msg: Message = {
+      id: Date.now().toString(),
+      fromId,
+      toId,
+      content,
+      read: false,
+      timestamp: Date.now()
+    };
+    db.messages.push(msg);
+    saveDB(db);
+  },
+
+  getMessages: (userId: string) => {
+    const db = getDB();
+    // Return messages sent to this user
+    return db.messages.filter(m => m.toId === userId).sort((a, b) => b.timestamp - a.timestamp);
   }
 };

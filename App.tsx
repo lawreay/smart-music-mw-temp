@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Song, PlayMode, PlayerState, User, Playlist, ViewState } from './types';
-import { processSongs, fetchItunesArt, getAudioUrl } from './services/musicData';
+import { fetchItunesArt, getAudioUrl } from './services/musicData';
 import { suggestPlaylistName } from './services/geminiService';
 import { backend } from './services/backend';
 import Sidebar from './components/Sidebar';
@@ -8,6 +9,8 @@ import PlayerBar from './components/PlayerBar';
 import AuthModal from './components/AuthModal';
 import PlaylistModal from './components/PlaylistModal';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
+import AdminDashboard from './components/AdminDashboard';
+import UserProfile from './components/UserProfile';
 
 const useIsMobile = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -58,28 +61,51 @@ const App: React.FC = () => {
   const currentSong = queue[currentIndex] || null;
 
   // --- INITIALIZATION ---
-  useEffect(() => {
-    const loadedSongs = processSongs();
-    setAllSongs(loadedSongs);
-    setDisplayedSongs(loadedSongs);
-    setQueue(loadedSongs);
+  const refreshSongs = () => {
+    const dbSongs = backend.getAllSongs();
+    setAllSongs(dbSongs);
+    // Refresh display if currently in library
+    if (viewState.type === 'library') {
+        setDisplayedSongs(dbSongs);
+        // Also update queue if it was the full list
+        // Simple strategy: if queue was all songs, update it.
+        // For robustness, we might leave queue alone to not interrupt playback too much, 
+        // but updating it ensures deleted songs don't play next.
+    }
+  };
 
-    // Initial Art Load
-    loadedSongs.slice(0, 15).forEach(async (song) => {
-      const art = await fetchItunesArt(song.artist, song.title);
-      if (art) {
-        setAllSongs(prev => prev.map(s => s.id === song.id ? { ...s, art } : s));
+  useEffect(() => {
+    const dbSongs = backend.getAllSongs();
+    setAllSongs(dbSongs);
+    setDisplayedSongs(dbSongs);
+    setQueue(dbSongs);
+
+    // Initial Art Load for songs missing art (demo only)
+    dbSongs.slice(0, 5).forEach(async (song) => {
+      if (song.art.includes('picsum') || song.art.includes('placeholder')) {
+        const art = await fetchItunesArt(song.artist, song.title);
+        if (art) {
+           // We don't save this to DB to avoid overwriting admin edits, just visual for session
+           // or we could save it. For now, let's keep it in memory state.
+           setAllSongs(prev => prev.map(s => s.id === song.id ? { ...s, art } : s));
+        }
       }
     });
-    
-    // Check for logged in user (in real app, token check)
-    // Here we just check if we have data in backend that corresponds to "last session" (skipped for simplicity)
   }, []);
 
   // --- VIEW LOGIC ---
   useEffect(() => {
     // Determine what songs to show based on ViewState and Search
     let filtered = allSongs;
+
+    if (viewState.type === 'admin') {
+        setHeaderInfo({ title: "Admin Dashboard", desc: "System Management" });
+        return;
+    }
+    if (viewState.type === 'profile') {
+        setHeaderInfo({ title: "Profile", desc: "Account Settings" });
+        return;
+    }
 
     // 1. Filter by View
     if (viewState.type === 'liked') {
@@ -91,14 +117,11 @@ const App: React.FC = () => {
         filtered = allSongs.filter(s => playlist.songs.includes(s.id));
         setHeaderInfo({ title: playlist.name, desc: `Custom Playlist • ${filtered.length} songs` });
       } else {
-        // Fallback
         setViewState({ type: 'library' });
       }
     } else {
       // Library
       setHeaderInfo({ title: "All Tracks", desc: "Your personal library" });
-      // Suggest AI name only for Library view once
-      // suggestPlaylistName(allSongs).then(name => setHeaderInfo(prev => ({ ...prev, title: name })));
     }
 
     // 2. Filter by Search
@@ -193,6 +216,9 @@ const App: React.FC = () => {
     // Load User Data
     setLikedSongIds(backend.getLikedSongIds(u.id));
     setUserPlaylists(backend.getUserPlaylists(u.id));
+    if (u.role === 'admin') {
+        setViewState({ type: 'admin' });
+    }
   };
 
   const handleLogout = () => {
@@ -220,10 +246,8 @@ const App: React.FC = () => {
     if (!user) return;
     const newPlaylist = await backend.createPlaylist(user.id, name);
     setUserPlaylists(prev => [...prev, newPlaylist]);
-    // Optionally open the add modal if we were trying to add a song
     if (showAddToPlaylist.isOpen && showAddToPlaylist.songId !== null) {
        await backend.addToPlaylist(newPlaylist.id, showAddToPlaylist.songId);
-       // Refresh that playlist if it's open? No need, it's new.
        setShowAddToPlaylist({ isOpen: false, songId: null });
     }
   };
@@ -232,7 +256,6 @@ const App: React.FC = () => {
     if (!user || showAddToPlaylist.songId === null) return;
     await backend.addToPlaylist(playlistId, showAddToPlaylist.songId);
     
-    // Update local state if needed (deep update)
     setUserPlaylists(prev => prev.map(p => {
         if (p.id === playlistId && showAddToPlaylist.songId !== null) {
             return { ...p, songs: [...p.songs, showAddToPlaylist.songId] };
@@ -271,97 +294,112 @@ const App: React.FC = () => {
              <button onClick={() => setSidebarOpen(true)} className="md:hidden text-gray-400">
                 <i className="fas fa-bars text-xl"></i>
              </button>
-             <div className="relative group w-full md:w-80">
-                <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400 transition-colors"></i>
-                <input 
-                    type="text" 
-                    placeholder="Search songs, artists..." 
-                    className="w-full bg-[#1e293b] border border-[#334155] rounded-full py-2 pl-10 pr-4 text-sm text-gray-300 focus:outline-none focus:border-blue-500 transition-all"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-             </div>
+             {viewState.type !== 'admin' && viewState.type !== 'profile' && (
+                 <div className="relative group w-full md:w-80">
+                    <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-400 transition-colors"></i>
+                    <input 
+                        type="text" 
+                        placeholder="Search songs, artists..." 
+                        className="w-full bg-[#1e293b] border border-[#334155] rounded-full py-2 pl-10 pr-4 text-sm text-gray-300 focus:outline-none focus:border-blue-500 transition-all"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                 </div>
+             )}
           </div>
         </header>
 
         {/* Scrollable Area */}
         <div className="flex-1 overflow-y-auto pb-32">
             
-            {/* Hero Banner */}
-            <div className="px-6 md:px-10 mt-4 mb-8">
-                <div className={`w-full h-48 md:h-56 rounded-2xl relative shadow-2xl flex items-end p-6 md:p-10 overflow-hidden group transition-colors duration-500
-                    ${viewState.type === 'liked' ? 'bg-gradient-to-r from-pink-900 to-purple-900' : 'bg-gradient-to-r from-indigo-900 to-blue-900'}
-                `}>
-                    <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-                    <div className="relative z-10 animate-fade-in-up">
-                        <span className="text-xs font-bold tracking-widest uppercase text-white/70 mb-2 block">{headerInfo.desc}</span>
-                        <h1 className="text-3xl md:text-5xl font-extrabold mb-2 text-white drop-shadow-lg">{headerInfo.title}</h1>
-                        <p className="text-white/60 text-sm font-medium">
-                           {user ? `Welcome back, ${user.username}` : 'Discover the best music'} 
-                        </p>
-                    </div>
-                    <div className="absolute right-0 bottom-0 p-10 opacity-20 transform translate-x-10 translate-y-10 group-hover:scale-110 transition-transform duration-700">
-                        <i className={`fas ${viewState.type === 'liked' ? 'fa-heart' : 'fa-music'} text-9xl`}></i>
+            {/* Conditional Views */}
+            {viewState.type === 'admin' && user?.role === 'admin' ? (
+                <AdminDashboard 
+                    currentUser={user} 
+                    songs={allSongs} 
+                    onSongUpdate={refreshSongs} 
+                />
+            ) : viewState.type === 'profile' && user ? (
+                <UserProfile user={user} onUpdateUser={setUser} />
+            ) : (
+                <>
+                {/* Hero Banner */}
+                <div className="px-6 md:px-10 mt-4 mb-8">
+                    <div className={`w-full h-48 md:h-56 rounded-2xl relative shadow-2xl flex items-end p-6 md:p-10 overflow-hidden group transition-colors duration-500
+                        ${viewState.type === 'liked' ? 'bg-gradient-to-r from-pink-900 to-purple-900' : 'bg-gradient-to-r from-indigo-900 to-blue-900'}
+                    `}>
+                        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+                        <div className="relative z-10 animate-fade-in-up">
+                            <span className="text-xs font-bold tracking-widest uppercase text-white/70 mb-2 block">{headerInfo.desc}</span>
+                            <h1 className="text-3xl md:text-5xl font-extrabold mb-2 text-white drop-shadow-lg">{headerInfo.title}</h1>
+                            <p className="text-white/60 text-sm font-medium">
+                               {user ? `Welcome back, ${user.username}` : 'Discover the best music'} 
+                            </p>
+                        </div>
+                        <div className="absolute right-0 bottom-0 p-10 opacity-20 transform translate-x-10 translate-y-10 group-hover:scale-110 transition-transform duration-700">
+                            <i className={`fas ${viewState.type === 'liked' ? 'fa-heart' : 'fa-music'} text-9xl`}></i>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Song Grid */}
-            <div className="px-6 md:px-10 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                {displayedSongs.map((song) => {
-                    const isCurrent = currentSong?.id === song.id;
-                    const isLiked = likedSongIds.includes(song.id);
-                    return (
-                        <div 
-                            key={song.id} 
-                            className={`
-                                group bg-[#182032] p-4 rounded-xl relative transition-all duration-300 hover:-translate-y-2 hover:bg-[#232d42] hover:shadow-xl
-                                ${isCurrent ? 'ring-2 ring-blue-500 bg-[#1e293b]' : ''}
-                            `}
-                        >
-                            {/* Card Actions */}
-                            <div className="absolute top-2 right-2 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); handleToggleLike(song.id); }}
-                                    className="w-8 h-8 rounded-full bg-black/50 hover:bg-pink-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-                                    title="Like"
-                                >
-                                    <i className={`${isLiked ? 'fas text-pink-500 hover:text-white' : 'far'} fa-heart text-sm`}></i>
-                                </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); if(!user) setShowAuthModal(true); else setShowAddToPlaylist({ isOpen: true, songId: song.id }); }}
-                                    className="w-8 h-8 rounded-full bg-black/50 hover:bg-blue-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
-                                    title="Add to Playlist"
-                                >
-                                    <i className="fas fa-plus text-sm"></i>
-                                </button>
-                            </div>
-
+                {/* Song Grid */}
+                <div className="px-6 md:px-10 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                    {displayedSongs.map((song) => {
+                        const isCurrent = currentSong?.id === song.id;
+                        const isLiked = likedSongIds.includes(song.id);
+                        return (
                             <div 
-                                onClick={() => loadAndPlay(displayedSongs.indexOf(song), displayedSongs)}
-                                className="cursor-pointer"
+                                key={song.id} 
+                                className={`
+                                    group bg-[#182032] p-4 rounded-xl relative transition-all duration-300 hover:-translate-y-2 hover:bg-[#232d42] hover:shadow-xl
+                                    ${isCurrent ? 'ring-2 ring-blue-500 bg-[#1e293b]' : ''}
+                                `}
                             >
-                                <div className="relative aspect-square rounded-lg overflow-hidden mb-4 shadow-lg">
-                                    <img src={song.art} alt={song.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
-                                    <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity duration-300 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                        <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white shadow-lg transform active:scale-95">
-                                            <i className={`fas ${isCurrent && playerState.isPlaying ? 'fa-chart-bar animate-pulse' : 'fa-play pl-1'}`}></i>
+                                {/* Card Actions */}
+                                <div className="absolute top-2 right-2 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); handleToggleLike(song.id); }}
+                                        className="w-8 h-8 rounded-full bg-black/50 hover:bg-pink-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+                                        title="Like"
+                                    >
+                                        <i className={`${isLiked ? 'fas text-pink-500 hover:text-white' : 'far'} fa-heart text-sm`}></i>
+                                    </button>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); if(!user) setShowAuthModal(true); else setShowAddToPlaylist({ isOpen: true, songId: song.id }); }}
+                                        className="w-8 h-8 rounded-full bg-black/50 hover:bg-blue-600 backdrop-blur-sm flex items-center justify-center text-white transition-colors"
+                                        title="Add to Playlist"
+                                    >
+                                        <i className="fas fa-plus text-sm"></i>
+                                    </button>
+                                </div>
+
+                                <div 
+                                    onClick={() => loadAndPlay(displayedSongs.indexOf(song), displayedSongs)}
+                                    className="cursor-pointer"
+                                >
+                                    <div className="relative aspect-square rounded-lg overflow-hidden mb-4 shadow-lg">
+                                        <img src={song.art} alt={song.title} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                                        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity duration-300 ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                            <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white shadow-lg transform active:scale-95">
+                                                <i className={`fas ${isCurrent && playerState.isPlaying ? 'fa-chart-bar animate-pulse' : 'fa-play pl-1'}`}></i>
+                                            </div>
                                         </div>
                                     </div>
+                                    <h3 className="text-sm font-bold text-white truncate mb-1">{song.title}</h3>
+                                    <p className="text-xs text-gray-400 truncate">{song.artist}</p>
                                 </div>
-                                <h3 className="text-sm font-bold text-white truncate mb-1">{song.title}</h3>
-                                <p className="text-xs text-gray-400 truncate">{song.artist}</p>
                             </div>
-                        </div>
-                    );
-                })}
-            </div>
-            
-            {displayedSongs.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-40 text-gray-500">
-                    <i className="fas fa-search text-3xl mb-3 opacity-50"></i>
-                    <p>No songs found.</p>
+                        );
+                    })}
                 </div>
+                
+                {displayedSongs.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-40 text-gray-500">
+                        <i className="fas fa-search text-3xl mb-3 opacity-50"></i>
+                        <p>No songs found.</p>
+                    </div>
+                )}
+                </>
             )}
         </div>
 
@@ -412,8 +450,6 @@ const App: React.FC = () => {
             onSelect={handleAddToPlaylist}
             onCreateNew={() => {
                 setShowCreatePlaylist(true);
-                // Keep the addToPlaylist modal logic pending until after creation
-                // We handle this inside handleCreatePlaylist
             }}
         />
       )}

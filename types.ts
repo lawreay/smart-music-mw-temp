@@ -1,3 +1,4 @@
+
 export interface Song {
   id: number;
   file: string;
@@ -26,6 +27,10 @@ export interface User {
   id: string;
   username: string;
   email: string;
+  role: 'user' | 'admin';
+  isBlocked?: boolean;
+  avatar?: string;
+  bio?: string;
 }
 
 export interface Playlist {
@@ -36,7 +41,18 @@ export interface Playlist {
   createdAt: number;
 }
 
+export interface Message {
+  id: string;
+  fromId: string; // 'admin' or user ID
+  toId: string;
+  content: string;
+  read: boolean;
+  timestamp: number;
+}
+
 export type ViewState = 
   | { type: 'library' }
   | { type: 'liked' }
-  | { type: 'playlist'; playlistId: string };
+  | { type: 'playlist'; playlistId: string }
+  | { type: 'admin' }
+  | { type: 'profile' };

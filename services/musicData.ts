@@ -1,6 +1,7 @@
+
 import { Song } from '../types';
 
-const rawFiles = [
+export const rawFiles = [
     "[CLEAN]_Juice_WRLD_-_I_Want_It(0).m4a",
     "[CLEAN]_Juice_WRLD_-_Reminds_Me_Of_You_feat._The_Kid_LAROI_(0).m4a",
     "[Instrumental]_Juice_WRLD_-_Black_and_White(128k).m4a",
@@ -33,8 +34,8 @@ const rawFiles = [
 // Placeholder image for initial load
 const DEFAULT_ART = "https://picsum.photos/400/400";
 
-// Helper to clean filenames
-export const processSongs = (): Song[] => {
+// Helper to clean filenames for initial seeding
+export const processInitialSongs = (): Song[] => {
   return rawFiles.map((file, index) => {
     let clean = file.replace(/\(128k\)/g, '').replace(/\(0\)/g, '').replace(/\[.*?\]/g, '');
     clean = clean.replace(/\.m4a$/, '').replace(/_/g, ' ').trim();
@@ -51,13 +52,9 @@ export const processSongs = (): Song[] => {
 
     title = title.replace(/Official Video|Music Video|Audio|Lyrics|Visualizer/gi, '').trim();
     
-    // NOTE: In a real app, 'file' would be a real URL. 
-    // Since we don't have the user's 'Aidios' folder, we use a sample MP3 for functionality demonstration.
-    // For the user to use their own files, they should replace the return string in `getUrl`.
-    
     return {
         id: index,
-        file: file, // Keep original filename for reference
+        file: file, 
         title: title || `Track ${index + 1}`,
         artist: artist,
         art: DEFAULT_ART
@@ -66,8 +63,9 @@ export const processSongs = (): Song[] => {
 };
 
 export const getAudioUrl = (filename: string): string => {
-    // DEMO MODE: Returning a public sample track because the local 'Aidios' folder doesn't exist in this environment.
-    // To use real files, return: `Aidios/${encodeURIComponent(filename)}`;
+    // If it's a full URL (added by admin), return it
+    if (filename.startsWith('http')) return filename;
+    // Otherwise return demo track
     return "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3";
 };
 
