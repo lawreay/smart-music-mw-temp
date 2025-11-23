@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Song, PlayMode, PlayerState } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Song, PlayMode, PlayerState, User } from '../types';
 import { getMusicInsight } from '../services/geminiService';
 
 interface PlayerBarProps {
@@ -12,6 +12,9 @@ interface PlayerBarProps {
   playerState: PlayerState;
   onSeek: (time: number) => void;
   onVolumeChange: (vol: number) => void;
+  isLiked: boolean;
+  onToggleLike: () => void;
+  user: User | null;
 }
 
 const formatTime = (time: number) => {
@@ -30,7 +33,10 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
   toggleMode,
   playerState,
   onSeek,
-  onVolumeChange
+  onVolumeChange,
+  isLiked,
+  onToggleLike,
+  user
 }) => {
   const [aiInsight, setAiInsight] = useState<string>("");
   const [showInsight, setShowInsight] = useState(false);
@@ -45,7 +51,6 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
     setLoadingInsight(false);
   };
 
-  // Close insight when song changes
   useEffect(() => {
     setShowInsight(false);
     setAiInsight("");
@@ -58,7 +63,7 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
       
       {/* Track Info */}
       <div className="flex items-center w-1/4 min-w-[140px]">
-        <div className="relative group">
+        <div className="relative group flex-shrink-0">
             <img 
             src={currentSong.art} 
             alt="Art" 
@@ -73,7 +78,7 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
             </button>
         </div>
         
-        <div className="overflow-hidden">
+        <div className="overflow-hidden mr-4">
           <h4 className="text-sm font-semibold text-white truncate hover:text-blue-400 transition-colors cursor-pointer">
             {currentSong.title}
           </h4>
@@ -81,6 +86,15 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
             {currentSong.artist}
           </p>
         </div>
+
+        {/* Like Button */}
+        <button 
+            onClick={onToggleLike}
+            className={`text-lg transition-transform active:scale-90 ${isLiked ? 'text-pink-500' : 'text-gray-500 hover:text-white'}`}
+            title={user ? (isLiked ? "Remove from Liked" : "Add to Liked") : "Login to Like"}
+        >
+            <i className={`${isLiked ? 'fas' : 'far'} fa-heart`}></i>
+        </button>
 
         {/* AI Popover */}
         {showInsight && (
@@ -128,7 +142,7 @@ const PlayerBar: React.FC<PlayerBarProps> = ({
           </button>
           
           <button className="text-gray-400 hover:text-white transition-colors text-lg">
-             <i className="fas fa-redo text-xs opacity-50"></i> {/* Placeholder for loop toggle logic specifically */}
+             <i className="fas fa-redo text-xs opacity-50"></i>
           </button>
         </div>
 
